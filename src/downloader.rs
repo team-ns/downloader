@@ -1,3 +1,6 @@
+#[cfg(feature = "blocking")]
+pub mod blocking;
+
 use anyhow::{Context, Result};
 use futures::{stream, StreamExt, TryStreamExt};
 

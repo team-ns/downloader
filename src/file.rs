@@ -1,5 +1,5 @@
 use anyhow::Result;
-use reqwest::header::{HeaderValue};
+use reqwest::header::HeaderValue;
 
 use std::cmp;
 use std::path::PathBuf;
