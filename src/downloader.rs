@@ -3,18 +3,21 @@ pub mod blocking;
 
 use anyhow::{Context, Result};
 use futures::{stream, StreamExt, TryStreamExt};
-
 use reqwest::{header, Client};
 use tokio::fs::File;
 use tokio::io::{AsyncSeekExt, AsyncWriteExt, SeekFrom};
 
 use crate::client;
+#[cfg(feature = "events")]
+use crate::event::{HandlerExt, Handlers};
 use crate::file::{ChunkRange, FileRequest};
 
 pub struct DownloaderBuilder {
     chunk_size: u32,
     buffer_size: usize,
     keep_alive: bool,
+    #[cfg(feature = "events")]
+    handlers: Handlers<File>,
 }
 
 impl DownloaderBuilder {
@@ -23,12 +26,9 @@ impl DownloaderBuilder {
             chunk_size: 512000,
             buffer_size: 150,
             keep_alive: false,
+            #[cfg(feature = "events")]
+            handlers: vec![],
         }
-    }
-
-    pub fn keep_alive(mut self, enable: bool) -> DownloaderBuilder {
-        self.keep_alive = enable;
-        self
     }
 
     pub fn chunk_size(mut self, size: u32) -> DownloaderBuilder {
@@ -38,6 +38,17 @@ impl DownloaderBuilder {
 
     pub fn buffer_size(mut self, size: usize) -> DownloaderBuilder {
         self.buffer_size = size;
+        self
+    }
+
+    pub fn keep_alive(mut self, enable: bool) -> DownloaderBuilder {
+        self.keep_alive = enable;
+        self
+    }
+
+    #[cfg(feature = "events")]
+    pub fn handlers(mut self, handlers: Handlers<File>) -> DownloaderBuilder {
+        self.handlers = handlers;
         self
     }
 
@@ -51,6 +62,8 @@ impl DownloaderBuilder {
             client,
             chunk_size: self.chunk_size,
             buffer_size: self.buffer_size,
+            #[cfg(feature = "events")]
+            handlers: self.handlers,
         })
     }
 }
@@ -59,6 +72,8 @@ pub struct Downloader {
     client: Option<Client>,
     chunk_size: u32,
     buffer_size: usize,
+    #[cfg(feature = "events")]
+    handlers: Handlers<File>,
 }
 
 impl Downloader {
@@ -84,6 +99,8 @@ impl Downloader {
                 .content_length()
                 .context("Failed to get content_length header, can't download file!")?,
         );
+        #[cfg(feature = "events")]
+        self.handlers.on_content_length(&file_size);
         let mut file = File::create(file_request.path).await?;
         let chunk_range = ChunkRange::new(file_size, self.chunk_size)?;
         let mut stream = stream::iter(chunk_range)
@@ -104,9 +121,13 @@ impl Downloader {
             })
             .buffer_unordered(self.buffer_size);
         while let Some((offset, bytes)) = stream.try_next().await? {
+            #[cfg(feature = "events")]
+            self.handlers.on_write(&bytes);
             file.seek(SeekFrom::Start(offset)).await?;
             file.write_all(&bytes).await?;
         }
+        #[cfg(feature = "events")]
+        self.handlers.on_finish(&file);
         Ok(file)
     }
 }

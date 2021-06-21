@@ -1,4 +1,5 @@
 mod client;
 mod downloader;
-mod event;
+#[cfg(any(feature = "events", feature = "blocking-events"))]
+pub mod event;
 mod file;
