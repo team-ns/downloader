@@ -93,7 +93,7 @@ impl Downloader {
         let url = &file_request.url;
         let file_size = file_request.size.unwrap_or(
             client
-                .head(url)
+                .get(url)
                 .send()
                 .await?
                 .content_length()
