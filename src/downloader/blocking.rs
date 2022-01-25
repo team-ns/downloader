@@ -1,14 +1,14 @@
-use anyhow::{Context, Result};
+use anyhow::Result;
 use reqwest::blocking::Client;
 use reqwest::header;
 use reqwest::header::{HeaderMap, HeaderValue};
 use std::fs::File;
 use std::io::{Read, Write};
-use std::path::Path;
 use std::time::Duration;
 
 #[cfg(feature = "blocking-events")]
 use crate::event::{HandlerExt, Handlers};
+use crate::FileRequest;
 
 pub struct DownloaderBuilder {
     duration: u64,
@@ -18,8 +18,8 @@ pub struct DownloaderBuilder {
     handlers: Handlers<File>,
 }
 
-impl DownloaderBuilder {
-    pub fn new() -> Self {
+impl Default for DownloaderBuilder {
+    fn default() -> Self {
         DownloaderBuilder {
             duration: 100,
             keep_alive: false,
@@ -28,7 +28,9 @@ impl DownloaderBuilder {
             handlers: vec![],
         }
     }
+}
 
+impl DownloaderBuilder {
     pub fn time_out(mut self, duration: u64) -> DownloaderBuilder {
         self.duration = duration;
         self
@@ -68,6 +70,7 @@ impl DownloaderBuilder {
     }
 }
 
+#[derive(Clone)]
 pub struct Downloader {
     client: Client,
     chunk_size: usize,
@@ -75,17 +78,21 @@ pub struct Downloader {
     handlers: Handlers<File>,
 }
 
+impl Default for Downloader {
+    fn default() -> Self {
+        DownloaderBuilder::default()
+            .build()
+            .expect("Failed to create default blocking downloader")
+    }
+}
+
 impl Downloader {
-    pub fn new() -> Result<Downloader> {
-        DownloaderBuilder::new().build()
-    }
-
     pub fn builder() -> DownloaderBuilder {
-        DownloaderBuilder::new()
+        DownloaderBuilder::default()
     }
 
-    pub fn download<P: AsRef<Path>>(&self, url: String, path: P) -> Result<File> {
-        let mut response = self.client.get(url).send()?;
+    pub fn download(&self, file_request: FileRequest) -> Result<File> {
+        let mut response = self.client.get(file_request.url).send()?;
         #[cfg(feature = "blocking-events")]
         {
             let content_length = response
@@ -93,7 +100,7 @@ impl Downloader {
                 .context("Failed to get content_length header, can't send event!")?;
             self.handlers.on_content_length(&content_length);
         }
-        let mut file = File::create(path)?;
+        let mut file = File::create(file_request.path)?;
         let mut buffer = vec![0; self.chunk_size];
         loop {
             match response.read(&mut buffer)? {
@@ -105,7 +112,7 @@ impl Downloader {
                 len => {
                     #[cfg(feature = "blocking-events")]
                     self.handlers.on_write(&buffer[..len]);
-                    file.write(&buffer[..len])?;
+                    file.write_all(&buffer[..len])?;
                 }
             }
         }

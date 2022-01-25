@@ -1,5 +1,7 @@
 #[cfg(feature = "blocking")]
 pub mod blocking;
+#[cfg(feature = "blocking")]
+pub mod manager;
 
 use anyhow::{Context, Result};
 use futures::{stream, StreamExt, TryStreamExt};
@@ -20,8 +22,8 @@ pub struct DownloaderBuilder {
     handlers: Handlers<File>,
 }
 
-impl DownloaderBuilder {
-    pub fn new() -> Self {
+impl Default for DownloaderBuilder {
+    fn default() -> Self {
         DownloaderBuilder {
             chunk_size: 512000,
             buffer_size: 150,
@@ -30,7 +32,9 @@ impl DownloaderBuilder {
             handlers: vec![],
         }
     }
+}
 
+impl DownloaderBuilder {
     pub fn chunk_size(mut self, size: u32) -> DownloaderBuilder {
         self.chunk_size = size;
         self
@@ -68,6 +72,7 @@ impl DownloaderBuilder {
     }
 }
 
+#[derive(Clone)]
 pub struct Downloader {
     client: Option<Client>,
     chunk_size: u32,
@@ -76,13 +81,17 @@ pub struct Downloader {
     handlers: Handlers<File>,
 }
 
-impl Downloader {
-    pub fn new() -> Result<Downloader> {
-        DownloaderBuilder::new().build()
+impl Default for Downloader {
+    fn default() -> Self {
+        DownloaderBuilder::default()
+            .build()
+            .expect("Failed to create default concurrent downloader")
     }
+}
 
+impl Downloader {
     pub fn builder() -> DownloaderBuilder {
-        DownloaderBuilder::new()
+        DownloaderBuilder::default()
     }
 
     pub async fn concurrent_download(&self, file_request: FileRequest) -> Result<File> {
